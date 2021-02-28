@@ -1,6 +1,3 @@
-{-# Language OverloadedStrings #-}
-{-# Language RecordWildCards #-}
-
 module Cabbage.Cabal where
 
 import           Data.Text (Text)

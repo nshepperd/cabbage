@@ -1,6 +1,3 @@
-{-# Language RecordWildCards #-}
-{-# Language OverloadedStrings #-}
-
 module Cabbage.Config where
 
 import           Control.Applicative
@@ -39,11 +36,15 @@ defaultConfig = Config Map.empty Map.empty Map.empty Set.empty ""
 readConfig :: IO Config
 readConfig = do
   configDir <- getUserConfigDir "cabbage"
-  txt <- T.readFile (configDir ++ "/cabbage.conf")
-  proj <- T.readFile (configDir ++ "/cabal.project") <|> pure ""
-  case parseNewConfig txt of
-    Right config -> return config { confProject = proj }
-    Left err -> ioError (userError err)
+  doesPathExist configDir >>= \case
+    True -> do
+      txt <- T.readFile (configDir ++ "/cabbage.conf")
+      proj <- T.readFile (configDir ++ "/cabal.project") <|> pure ""
+      case parseNewConfig txt of
+        Right config -> return config { confProject = proj }
+        Left err -> ioError (userError err)
+    False -> return defaultConfig
+
 
 writeConfig :: Config -> IO ()
 writeConfig config = writeConfigText (encodeConfig config)

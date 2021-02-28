@@ -1,5 +1,3 @@
-{-# Language OverloadedStrings #-}
-{-# Language LambdaCase #-}
 module Main where
 
 import           Control.Monad
@@ -28,17 +26,10 @@ import           System.Process (callProcess)
 import           Text.Pretty.Simple
 import           Text.Printf
 
+import qualified Cabbage.Cabal as D
 import           Cabbage.Config (Config(..), readConfig, writeConfig, encodeConfig)
 import qualified Cabbage.Config as Config
-import qualified Cabbage.Cabal as D
-
-consume :: Text -> Text -> Text
-consume prefix txt
-  | T.isPrefixOf prefix txt = T.drop (T.length prefix) txt
-  | otherwise = error (show prefix <> " is not prefix of " ++ show txt)
-
-trim :: Text -> Text
-trim = T.dropWhile isSpace . T.dropWhileEnd isSpace
+import           Cabbage.Parser
 
 localName :: FilePath -> IO Text
 localName path = do files <- map (T.splitOn "." . T.pack) <$> listDirectory path
@@ -137,16 +128,7 @@ getVersions plan = do
   withCurrentDirectory path $ do
     callProcess "cabal" ["v2-freeze"]
     freezedata <- T.readFile "cabal.project.freeze"
-    let newdeps = (map (D.parseDep . consume "any.")
-                   . filter (T.isPrefixOf "any.")
-                   . map trim
-                   . T.splitOn ","
-                   . consume "constraints: ") freezedata
-        newdeps' = [(D.depPackage dep, v)
-                   | dep <- newdeps,
-                     Just v <- [D.versionOfRange $ D.depVersion dep]]
-    return newdeps'
-
+    return (parseFreeze freezedata)
 
 solve :: Plan -> IO Plan
 solve plan = do newVersions <- getVersions plan
@@ -232,11 +214,20 @@ upMajor :: Plan -> Plan
 upMajor plan = plan { pInstall = go <$> pInstall plan }
   where go ps = ps {pVersion = Nothing, pVersionRange = Just D.anyVersion}
 
+ensure :: Text -> Plan -> Plan
+ensure pkg plan = alterPackage pkg go plan
+  where
+    go (Just ps) = Just ps
+    go (Nothing) = Just PS { pVersion = Nothing,
+                             pVersionRange = Just D.anyVersion,
+                             pExplicit = True }
+
+
 cmdInstall :: [Plan -> Plan] -> IO ()
 cmdInstall ops = do
   config <- readConfig
   let plan = confPlan config
-      editplan = foldl (.) id ops plan
+      editplan = ensure "base" (foldl (.) id ops plan)
   newplan <- solve editplan
   explain plan newplan
   T.putStr "Continue? [Y/n] "
@@ -255,6 +246,11 @@ commit = do
   args <- unwords <$> getArgs
   path <- getUserConfigDir "cabbage"
   withCurrentDirectory path $ do
+    doesPathExist ".git" >>= \case
+      True -> pure ()
+      False -> do
+        callProcess "git" ["init"]
+        callProcess "git" ["add", "cabbage.conf"]
     callProcess "git" ["commit", "-am", args]
 
 cmdGit :: [Text] -> IO ()
