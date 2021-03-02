@@ -1,7 +1,10 @@
-Manages the default ghc package environment, allowing you to install
-and remove packages. Almost like a real package manager.
+## A Package "Manager" for Haskell
 
-Keeps a registry of installed packages in
+Manages the default ghc package environment
+(`~/.ghc/x86_64-linux-$version/environments/default`), allowing you to
+install and remove packages. Almost like a real package manager.
+
+This is accomplished by keeps a registry of installed packages in
 `~/.config/cabbage/cabbage.conf`. Invoking `cabbage install` allows
 you to manipulate this registry, adding, removing or upgrading
 packages, then builds a dummy package with dependencies given by the

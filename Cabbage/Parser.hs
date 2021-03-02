@@ -2,6 +2,7 @@ module Cabbage.Parser (
   Parser
   , parseText
   , parseFreeze
+  , parsePackage
   ) where
 
 import qualified Cabbage.Cabal as D
@@ -19,10 +20,12 @@ parseText p txt = case parseString p mempty (T.unpack txt) of
   Success a -> a
   Failure e -> error (show (_errDoc e))
 
+p_pkgname :: Parser Text
+p_pkgname = T.pack <$> some (letter <|> digit <|> oneOf "-")
+
 parseFreeze :: Text -> [(D.PackageName, D.Version)]
 parseFreeze txt = parseText p txt
   where
-    p_pkgname = T.pack <$> some (letter <|> digit <|> oneOf "-")
     p_version = T.pack <$> some (digit <|> oneOf ".")
     p = do text "constraints:"
            spaces
@@ -46,3 +49,12 @@ parseFreeze txt = parseText p txt
            spaces
            eof
            return pairs
+
+parsePackage :: Text -> (D.PackageName, D.VersionRange)
+parsePackage pkg = parseText p pkg
+  where
+    p_ver = T.pack <$> some anyChar
+    p = do
+      pkgname <- p_pkgname <* spaces
+      ver <- p_ver <|> pure D.anyVersion
+      return (pkgname, ver)

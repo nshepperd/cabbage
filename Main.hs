@@ -64,7 +64,8 @@ data PS = PS {
 data Plan = Plan {
   pInstall :: Map D.PackageName PS,
   pLocals :: Set Text,
-  pProject :: Text
+  pProject :: Text,
+  pOutputFile :: Maybe Text
   }
   deriving Show
 
@@ -72,7 +73,7 @@ alterPackage :: D.PackageName -> (Maybe PS -> Maybe PS) -> Plan -> Plan
 alterPackage pkg f plan = plan { pInstall = Map.alter f pkg (pInstall plan) }
 
 confPlan :: Config -> Plan
-confPlan conf = Plan pi pl (confProject conf)
+confPlan conf = Plan pi pl (confProject conf) Nothing
   where
     build e v = PS { pVersion = Just v,
                      pVersionRange = Nothing,
@@ -183,23 +184,29 @@ explain plan newplan = do
       classify pkg (Just PS{pExplicit = False}) Nothing
         = Just ("removed implicit dependency", printf "%s" pkg)
       classify pkg _ _ = Nothing
-      classes = sort <$> Map.fromListWith (++) [(k, [v]) | (k,v) <- toList $ plusMap classify (pInstall plan) (pInstall newplan)]
+      classes = sort <$> Map.fromListWith (++) [(k, [v]) | (k,v) <-
+                                                   toList $ plusMap classify (pInstall plan) (pInstall newplan)]
 
-  T.putStrLn "==========="
-  T.putStrLn "Changes to be made:"
-  for_ (Map.toList classes) $ \(ty, items) -> do
-    T.putStrLn (indent 1 ty)
-    T.putStrLn (T.unlines $ map (indent 2 . T.pack) items)
+  case Map.null classes of
+    False -> do
+      T.putStrLn "===== Changes to be made ======"
+      for_ (Map.toList classes) $ \(ty, items) -> do
+        T.putStrLn (indent 1 ty)
+        T.putStrLn (T.unlines $ map (indent 2 . T.pack) items)
+    True -> do T.putStrLn "===== No changes ======"
+               T.putStrLn "Will just build and reinstall the current registry state."
+
+  when (not (Set.null (pLocals newplan))) $ do
+    T.putStrLn "The following local packages will be (re)built:"
+    T.putStrLn $ T.unlines [indent 2 p | p <- toList (pLocals newplan)]
 
 addPackage :: Text -> Plan -> Plan
-addPackage pkg plan = alterPackage pkg go plan
+addPackage pkg plan = alterPackage pkgname go plan
   where
-    go (Just ps) = Just ps { pVersion = Nothing,
-                             pVersionRange = Just D.anyVersion,
-                             pExplicit = True }
-    go Nothing = Just PS { pVersion = Nothing,
-                           pVersionRange = Just D.anyVersion,
-                           pExplicit = True }
+    (pkgname, pkgver) = parsePackage pkg
+    go _ = Just PS{ pVersion = Nothing,
+                    pVersionRange = Just pkgver,
+                    pExplicit = True }
 
 rmPackage :: Text -> Plan -> Plan
 rmPackage pkg plan = alterPackage pkg go plan
@@ -213,6 +220,9 @@ upMinor plan = plan { pInstall = go <$> pInstall plan }
 upMajor :: Plan -> Plan
 upMajor plan = plan { pInstall = go <$> pInstall plan }
   where go ps = ps {pVersion = Nothing, pVersionRange = Just D.anyVersion}
+
+setOutputFile :: Text -> Plan -> Plan
+setOutputFile txt plan = plan { pOutputFile = Just txt }
 
 ensure :: Text -> Plan -> Plan
 ensure pkg plan = alterPackage pkg go plan
@@ -235,7 +245,10 @@ cmdInstall ops = do
   answer <- T.getLine
   when (answer == "Y" || answer == "") $ do
     (txt, ghcver) <- executePlan newplan
-    writeDefaultEnvironmentFile txt ghcver
+    case pOutputFile newplan of
+      Just fpath -> do T.writeFile (T.unpack fpath) txt
+                       T.putStrLn ("Wrote '" <> fpath <> "'.")
+      Nothing -> writeDefaultEnvironmentFile txt ghcver
     let newConfig = planConf newplan
     when (config /= newConfig) $ do
       writeConfig newConfig
@@ -262,15 +275,27 @@ cmdGit args = do
 
 main :: IO ()
 main = do
+  let installFlags = asum [
+        addPackage <$> strArgument (metavar "PACKAGE" <>
+                                    help "Install packages. Supports cabal constraint syntax (eg. lens ==4.19)"),
+        rmPackage <$> strOption (short 'r' <> long "remove" <> metavar "PACKAGE" <> help "Remove packages"),
+        flag' upMinor (long "minor-upgrade" <>
+                       help ("Upgrade every installed package to a "
+                             <> "compatible version as defined by PVP "
+                             <> "(^>=)")),
+        flag' upMajor (long "major-upgrade" <>
+                       help ("Upgrade every installed package to the "
+                             <> "newest version available (release all"
+                             <> "constraints)")),
+        setOutputFile <$> strOption (short 'o' <> long "output" <> metavar "FILENAME" <>
+                                     help "Write output to this file, instead of the default environment in ~/.ghc")
+        ]
   let cmdparse = subparser (
         command "install"
-          (info (cmdInstall <$> (many (addPackage <$> strArgument (metavar "PACKAGE") <|>
-                                       addPackage <$> strOption (short 'p' <> long "install") <|>
-                                       rmPackage <$> strOption (short 'r' <> long "remove") <|>
-                                       flag' upMinor (long "minor-upgrade") <|>
-                                       flag' upMajor (long "major-upgrade")
-                                      )) <**> helper)
-            (progDesc "Install, upgrade, remove packages."))
+          (info (cmdInstall <$> (many installFlags <**> helper))
+            (progDesc ("Install, upgrade, remove packages. " <>
+                       "Options can be provided multiple times and " <>
+                       "are processed from left to right.")))
           <>
           command "git"
           (info (cmdGit <$> (many (strArgument (metavar "ARGS"))) <**> helper)
