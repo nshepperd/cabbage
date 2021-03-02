@@ -18,6 +18,25 @@ selected package versions are remembered until you explicitly upgrade.
 The package registry `~/.config/cabbage` is stored in git so that
 changes can be easily reverted.
 
+Not guaranteed to do anything sensible on Windows.
+
+## Getting Started
+
+Build the executable, and put `cabbage` somewhere in your PATH. Make
+sure your cabal package cache is reasonably up to date (`cabal
+v2-update`). Install something:
+
+    cabbage install lens
+
+Then invoke ghc/ghci outside of a project and experience the joy of
+having libraries available in your repl:
+
+	GHCi, version 8.10.4: https://www.haskell.org/ghc/  :? for help
+	Loaded package environment from /home/username/.ghc/x86_64-linux-8.10.4/environments/default
+	Loaded GHCi configuration from /home/username/.ghci
+	λ> import Control.Lens
+	λ>
+
 ## Bonus features (not controllable with the command line UI currently)
 
 ### `cabal.project`
