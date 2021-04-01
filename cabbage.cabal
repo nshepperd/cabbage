@@ -16,7 +16,7 @@ executable cabbage
   main-is:             Main.hs
   other-modules:       Cabbage.Config, Cabbage.Cabal, Cabbage.Parser
   -- other-extensions:
-  build-depends:       base >= 4.12.0.0 && < 4.15.0.0
+  build-depends:       base >= 4.12.0.0 && < 4.16.0.0
                      , Glob
                      , containers
                      , directory
